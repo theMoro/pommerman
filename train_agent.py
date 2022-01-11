@@ -40,7 +40,7 @@ def set_learning_rate(optimizer, lr):
 
 def train(device_name="cuda:0", model_folder="group20/resources", model_file="imitation_model.pt",
           load_imitation_model=False, k_epochs=4, lr_actor_imitation=1e-3, lr=1e-3,
-          render=False, batch_size=16, gamma=0.99, print_stats=100, save_model=100,
+          render=False, batch_size=16, gamma=0.99, print_stats=10, save_model=10,
           min_horizon=1024):
     device = device_name
     if device_name == 'cuda:0':
@@ -179,7 +179,8 @@ def train(device_name="cuda:0", model_folder="group20/resources", model_file="im
 
     # region --- TRAIN CRITIC NETWORK ---
     # episodes_per_training_round = [10000, 10000, 10000, 60000]
-    episodes_per_training_round = [1000, 2000, 2000, 6000] # removed 0s # 1000
+    # episodes_per_training_round = [10, 1000, 2000, 6000] # removed 0s # 310 (300 with rd 6 and 10 with rd 25)
+    episodes_per_training_round = [100, 100, 100, 100]
     # print_stats = 10
     # episodes_per_training_round = [amount - (amount % batch_size) for amount in episodes_per_training_round]
 
@@ -236,12 +237,15 @@ def train(device_name="cuda:0", model_folder="group20/resources", model_file="im
 
         new_game = True
         actions_taken = [0] * 6
+        game_steps = 0
 
         # training loops
         with tqdm(total=episodes) as pbar:
             while episode_count < episodes:
                 if render:
                     env.render()
+
+                game_steps += 1
 
                 # jitter correction
                 if jitter_amount == 0:
@@ -304,6 +308,9 @@ def train(device_name="cuda:0", model_folder="group20/resources", model_file="im
                 replay_memory.push(obs_trainee_featurized, action, action_probs, reward, terminal, penalty)
 
                 if terminal:
+                    # won_lost = 'i won' if reward.item() == 1.0 else 'i lost'
+                    # print(won_lost) # to remove
+
                     # optimize model
                     if (nr_iterations - last_update_iteration_nr) >= min_horizon:
                         diff = nr_iterations - last_update_iteration_nr
@@ -363,10 +370,12 @@ def train(device_name="cuda:0", model_folder="group20/resources", model_file="im
                                                             f"({actions_taken[i]})" for i in
                                                             range(len(actions_taken))])
                         actions_taken = [0] * 6
-                        tqdm.write("Episode: {}, Reward: {}, Wins: {}, Nr of iterations: {}, "
+                        tqdm.write("Episode: {}, Reward: {}, Wins: {}, Game steps: {}, "
                                    "Action percentages: {}".format(
                             episode_count, reward_count, wins,
-                            nr_iterations, action_percentages_str))
+                            game_steps, action_percentages_str))
+
+                        game_steps = 0
 
                         action_losses *= min_horizon
                         critic_losses *= min_horizon
@@ -412,6 +421,6 @@ def train(device_name="cuda:0", model_folder="group20/resources", model_file="im
 if __name__ == "__main__":
     device = 'cuda:0'
     model = os.path.join("group20", "resources")
-    # print("change name") # render
+    # print("change ") # render
     train(device_name=device, model_folder=model, load_imitation_model=True,
           render=False, model_file='imitation_model.pt')  # To change

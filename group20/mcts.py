@@ -12,6 +12,8 @@ import numpy as np
 from group20 import node as node_py
 from group20.game_state import game_state_from_obs
 
+from pommerman import constants
+
 
 def softmax(x):
     probs = np.exp(x - np.max(x))
@@ -38,6 +40,8 @@ class MCTS:
         # new vars
         self._policy = policy
         self._c_puct = c_puct
+
+        # print('agent_id: ', self.agent_id) # delete
 
     def choose(self):
         """ Choose the best successor of node. (Choose an action) """
@@ -67,6 +71,9 @@ class MCTS:
         leaf = path[-1]
 
         # new
+        if leaf.obs is None:
+            leaf.make_obs()
+
         action_probs, leaf_value = self._policy(leaf.obs, self.agent_id, device=self.device)
         # end new
 
@@ -90,12 +97,15 @@ class MCTS:
                 path.append(unexplored)
                 return path
 
-            #node = self._uct_select(node)  # descend a layer deeper
+            # node = self._uct_select(node)  # descend a layer deeper
 
             # new code
             node = node.select_greedily(self._c_puct)
 
     def expand_root(self, root_node):
+        if root_node.obs is None:
+            root_node.make_obs()
+
         action_probs, leaf_value = self._policy(root_node.obs, self.agent_id, device=self.device)
         root_node.find_children(action_probs)
 
@@ -152,14 +162,19 @@ class MCTS:
         return max(children, key=uct)
 
     def get_nn_outputs(self, node):
+        if node.obs is None:
+            node.make_obs()
+
         action_probs, state_v = self._policy(node.obs, self.agent_id, device=self.device)
         actions, probs = zip(*action_probs)
-        return actions, probs, state_v
+        return list(actions), probs, state_v
 
     def _find_random_child(self, node):
         actions, probs, _ = self.get_nn_outputs(node)
 
         pruned_actions = [a for a in actions if not node.prune(a, is_opponent=False)]
+        if len(pruned_actions) == 0:
+            pruned_actions = [constants.Action.Stop.value]
 
         action_list = [None, None]
         action_list[self.agent_id] = np.random.choice(pruned_actions) # , p=probs)
@@ -170,6 +185,9 @@ class MCTS:
         if sel_actions in node.children.keys():
             return node.children[sel_actions]
         else:
+            if action_list[self.agent_id] not in actions:
+                print('debug', actions, action_list, action_list[self.agent_id], self.agent_id)
+                return node.forward(sel_actions, 0)
             idx = actions.index(action_list[self.agent_id])
             prob = probs[idx]
             child = node.forward(sel_actions, prob)
@@ -180,6 +198,9 @@ class MCTS:
         actions, probs, _ = self.get_nn_outputs(node)
 
         pruned_actions = [a for a in actions if not node.prune(a, is_opponent=False)]
+        if len(pruned_actions) == 0:
+            pruned_actions = [constants.Action.Stop.value]
+
         action_list = [None, None]
         action_list[self.agent_id] = pruned_actions
         action_list[1 - self.agent_id] = node.pruned_opponent_actions
@@ -197,22 +218,27 @@ class MCTS:
         return child
 
     def update_root(self, last_selected_actions, obs, agent_id):
-        self.agent_id = agent_id # probably not necessary
+        game_state = game_state_from_obs(obs, self.agent_id)
 
         if (last_selected_actions[0], last_selected_actions[1]) not in self._root.children.keys():
-            game_state = game_state_from_obs(obs, self.agent_id)
-            self._root = node_py.Node(None, game_state, agent_id, 1)
+            self._root = node_py.Node(None, game_state, agent_id, 1, obs=obs)
         else:
             self._root = self._root.children[(last_selected_actions[0], last_selected_actions[1])]
             self._root._parent = None
+            self._root.obs = obs
+            self.root_state = game_state
 
         if len(self._root.children) == 0:
             self.expand_root(self._root)
 
-    def set_root_obs_state(self, obs):
+    def set_root_obs_state(self, obs, safe_actions):
         self._root.obs = obs
         game_state = game_state_from_obs(obs, self.agent_id)
         self.root_state = game_state
+
+        for key in list(self._root.children):
+            if key[self.agent_id] not in safe_actions:
+                del self._root.children[key]
 
     def get_move_probs(self, temp=1e-3):
         act_visits = [(act[self.agent_id], n.n_visits) for act, n in self._root.children.items()]

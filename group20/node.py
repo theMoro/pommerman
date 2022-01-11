@@ -42,20 +42,31 @@ class Node(MCTSNode):
         self._u = 0
         self._P = prior_p
 
-        board = state[0]
-        agents = state[1]
-        bombs = state[2]
-        flames = state[4]
-
-        if obs is None:
-            fm = ForwardModel()
-            obss = fm.get_observations(board, agents, bombs, flames, False, 10,
-                                       constants.GameType.FFA, 'pommerman.envs.v0:Pomme')
-            obs = obss[agent_id]
-
+        # board = state[0]
+        # agents = state[1]
+        # bombs = state[2]
+        # flames = state[4]
+        #
+        # if obs is None:
+        #     fm = ForwardModel()
+        #     obss = fm.get_observations(board, agents, bombs, flames, False, 10,
+        #                                constants.GameType.FFA, 'pommerman.envs.v0:Pomme')
+        #     obs = obss[agent_id]
+        #
         self.obs = obs
 
         self.pruned_opponent_actions = [a for a in range(6) if not self.prune(a)]
+
+    def make_obs(self):
+        board = self.state[0]
+        agents = self.state[1]
+        bombs = self.state[2]
+        flames = self.state[4]
+
+        fm = ForwardModel()
+        obss = fm.get_observations(board, agents, bombs, flames, False, 10,
+                                   constants.GameType.FFA, 'pommerman.envs.v0:Pomme')
+        self.obs = obss[self.agent_id]
 
     def get_my_children_actions(self):
         my_actions = []
@@ -124,10 +135,8 @@ class Node(MCTSNode):
         """ expands all children """
 
         pruned_actions = [a for a in range(6) if not self.prune(a, is_opponent=False)]
-
-        # if len(pruned_actions) > len(action_priors):
-        #     # print('my prunning pruned more actions, see why and if correct')
-        #     pass
+        if len(pruned_actions) == 0:
+            pruned_actions = [constants.Action.Stop.value]
 
         for action, prob in action_priors:
             if action in pruned_actions: # added new
@@ -135,11 +144,6 @@ class Node(MCTSNode):
                     actions = [None, None]
                     actions[self.agent_id] = action
                     actions[1-self.agent_id] = opponent_action
-
-                    # check the prunning
-                    # if action not in pruned_actions:
-                    #     # print("see why self.prune pruned it")
-                    #     pass
 
                     if (actions[0], actions[1]) not in self.children.keys():
                         self.children[(actions[0], actions[1])] = self.forward(actions, prob)

@@ -29,27 +29,6 @@ def create_training_env(training_round, percentage_done=0):
         opponent = SimpleAgent()
     elif training_round == 2:
         # 10 000 games, static agent = dummy agent
-
-        # limit = 10
-        #
-        # if percentages_done < 0.1:
-        #     limit = 3
-        # elif percentages_done < 0.2:
-        #     limit = 5
-        # elif percentages_done < 0.4:
-        #     limit = 7
-        # elif percentages_done < 0.6:
-        #     limit = 9
-        # elif percentages_done < 0.8:
-        #     limit = 10
-        #
-        # x, y = random.choice(range(limit)), random.choice(range(limit))
-        #
-        # bomber = characters.Bomber()
-        # bomber.set_start_position((x, y))
-        #
-        # opponent = DummyAgent(character=bomber)
-
         opponent = DummyAgent()
     elif training_round == 3:
         # 20 000 games, simple agent but no bombs
@@ -61,6 +40,7 @@ def create_training_env(training_round, percentage_done=0):
         raise NotImplementedError()
 
     # we create the ids of the two agents in a randomized fashion
+    # get trainee and opponent id
     ids = [0, 1]
     random.shuffle(ids)
     trainee_id = ids[0]
@@ -141,8 +121,75 @@ def make_step(action, obs, trainee_id, enemy_action=0):
     return board, curr_agents
 
 
-def get_next_position_with_board_copy(obs, direction, position, trainee_id):
+def get_next_position_with_board_copy_fast(board_, position, bomb_positions,
+                                                                       bomb_lifes, flames,
+                                                                       bomb_blast_strengths, a):
+    board = board_.copy()
+    if a in [constants.Action.Bomb, constants.Action.Stop]:
+        new_x, new_y = position
+        agent_nr = board[new_x, new_y]
+    else:
+        new_x, new_y = utility.get_next_position(position, a)
 
+        if not utility.position_on_board(board, (new_x, new_y)):
+            return board, None
+
+        if board[new_x, new_y] == constants.Item.Bomb.value:
+            new_x, new_y = position
+            agent_nr = board[new_x, new_y]
+        else:
+
+            old_x, old_y = position
+
+            board[new_x, new_y] = board[old_x, old_y]
+            agent_nr = board[old_x, old_y]
+            board[old_x, old_y] = constants.Item.Passage.value
+
+    # if 1 in bomb_lifes:
+    #     for i, (bomb_x, bomb_y) in enumerate(bomb_positions):
+    #         if bomb_lifes[i] == 1:
+    #             # not completly correct, but good enough
+
+    agent_numbers = np.array([10, 11])
+    other_agent_nr = agent_numbers[agent_numbers != agent_nr][0]
+    for i, (bomb_x, bomb_y) in enumerate(bomb_positions):
+        if bomb_lifes[i] == 1:
+
+            x_minus, x_plus, y_minus, y_plus = True, True, True, True
+
+            board[bomb_x, bomb_y] = constants.Item.Flames.value
+            for r in range(bomb_blast_strengths[i]):
+
+                if bomb_y + r <= 10 and board[bomb_x, bomb_y+r] != constants.Item.Rigid.value and y_plus:
+                    board[bomb_x, bomb_y+r] = constants.Item.Flames.value
+                else:
+                    y_plus = False
+
+                if bomb_y - r >= 0 and board[bomb_x, bomb_y-r] != constants.Item.Rigid.value and y_minus:
+                    board[bomb_x, bomb_y-r] = constants.Item.Flames.value
+                else:
+                    y_minus = False
+
+                if bomb_x + r <= 10 and board[bomb_x+r, bomb_y] != constants.Item.Rigid.value and x_plus:
+                    board[bomb_x+r, bomb_y] = constants.Item.Flames.value
+                else:
+                    x_plus = False
+
+                if bomb_x - r >= 0 and board[bomb_x-r, bomb_y] != constants.Item.Rigid.value and x_minus:
+                    board[bomb_x-r, bomb_y] = constants.Item.Flames.value
+                else:
+                    x_minus = False
+
+        elif (bomb_x, bomb_y) != (new_x, new_y) and board[bomb_x, bomb_y] != other_agent_nr:
+            board[bomb_x, bomb_y] = constants.Item.Bomb.value
+
+    if board[new_x, new_y] == constants.Item.Flames.value:
+        return board, None
+
+    return board, (new_x, new_y)
+
+
+def get_next_position_with_board_copy(obs, direction, position, trainee_id):
     board, curr_agents = make_step(direction.value, obs, trainee_id)
 
     if direction in [constants.Action.Bomb, constants.Action.Stop]:
@@ -159,25 +206,6 @@ def get_next_position_with_board_copy(obs, direction, position, trainee_id):
         return board, None
 
     return board, (new_x, new_y)
-
-
-    #
-    #     old_x, old_y = position
-    #
-    #     board[new_x, new_y] = board[old_x, old_y]
-    #     board[old_x, old_y] = constants.Item.Passage.value
-    #
-    # if 1 in bomb_lifes:
-    #     for i, (bomb_x, bomb_y) in enumerate(bomb_positions):
-    #         if bomb_lifes[i] == 1:
-    #             # not completly correct, but good enough
-    #             board[bomb_x-blast_strength+1:bomb_x+blast_strength, bomb_y] = constants.Item.Flames.value
-    #             board[bomb_x, bomb_y-blast_strength+1:bomb_y+blast_strength] = constants.Item.Flames.value
-    #
-    # if 1 in obs_flame_lifes:
-    #     board[obs_flame_lifes == 1] = constants.Item.Passage.value
-    #
-    # return board, (new_x, new_y)
 
 
 def find_bomb_coverings(board, position):
@@ -199,14 +227,14 @@ def find_bomb_coverings(board, position):
     column_ys_unchecked = np.where(column == constants.Item.Bomb.value)[0]
 
     if len(row_xs_unchecked) == 0 and len(column_ys_unchecked) == 0:
-        return [np.inf, -np.inf]
+        return [np.inf, -np.inf], None
 
     if len(row_xs_unchecked) > 0:
         # filter for bombs without rigid between position and bombs position
         for x_index in row_xs_unchecked:
             elements_between = board[min(x,x_index):max(x,x_index), y]
 
-            if constants.Item.Rigid.value not in elements_between:
+            if constants.Item.Rigid.value not in elements_between and constants.Item.Wood.value not in elements_between:
                 row_xs.append(x_index)
 
         if len(row_xs) > 0:
@@ -228,7 +256,7 @@ def find_bomb_coverings(board, position):
         for y_index in column_ys_unchecked:
             elements_between = board[x, min(y, y_index):max(y, y_index)]
 
-            if constants.Item.Rigid.value not in elements_between:
+            if constants.Item.Rigid.value not in elements_between and constants.Item.Wood.value not in elements_between:
                 column_ys.append(y_index)
 
         if len(column_ys) > 0:
@@ -246,32 +274,51 @@ def find_bomb_coverings(board, position):
                 print(e)
 
     if len(row_xs) == 0 and len(column_ys) == 0:
-        return [np.inf, -np.inf]
+        return [np.inf, -np.inf], None
 
     if len(row_distances) == 0 or len(column_distances) == 0:
         distances = row_distances if len(row_distances) > len(column_distances) else column_distances
     else:
         distances = np.concatenate([row_distances, column_distances])
 
+    # to get position of the nearest bomb
+    if len(row_bombs) == 0 or len(column_bombs) == 0:
+        bombs = row_bombs if len(row_bombs) > len(column_bombs) else column_bombs
+    else:
+        bombs = np.concatenate([row_bombs, column_bombs])
+
+    distances = np.array(distances)
+    idx = distances.argmin()
+    bomb_pos_to_return = bombs[idx]
+
     distances.sort()
 
     if len(distances) == 1:
         distances = [distances[0], np.inf]
 
-    return distances
+    return distances, bomb_pos_to_return
 
 
 def find_min_bomb_covering(board, position):
-    return find_bomb_coverings(board, position)[0]
+    # return find_bomb_coverings(board, position)[0]
+
+    distances, bomb = find_bomb_coverings(board, position)
+    return distances[0], bomb
 
 
 def find_max_bomb_covering(board, position):
-    return find_bomb_coverings(board, position)[-1]
+    # return find_bomb_coverings(board, position)[-1]
+
+    distances, bomb = find_bomb_coverings(board, position)
+    return distances[-1], bomb
 
 
 def find_max_min_bomb_covering(board, position):
-    c = find_bomb_coverings(board, position)
-    return c[-1], c[0]
+    # c = find_bomb_coverings(board, position)
+    # return c[-1], c[0]
+
+    distances, bomb = find_bomb_coverings(board, position)
+    return distances[-1], distances[0], bomb
 
 
 """
@@ -284,25 +331,38 @@ def find_max_min_bomb_covering(board, position):
 """
 
 
-def min_evade_step(board, p, history, blast_strength, invalid_values):
-    u, l = find_max_min_bomb_covering(board, p) # if not bomb_on_position else (0, 0)
+def min_evade_step(board, p, history, blast_strength, invalid_values, bomb_positions, bomb_blast_strengths, bomb_lifes, call_from_select=False):
+    u, l, bomb = find_max_min_bomb_covering(board, p) # if not bomb_on_position else (0, 0)
+
+    bomb_life = 0
+
+    # new
+    if bomb is not None:
+        idx = bomb_positions.index([bomb[0], bomb[1]])
+        blast_strength = bomb_blast_strengths[idx]
+        bomb_life = bomb_lifes[idx]
+
+    # for debugging
+    if call_from_select and u != -np.inf:
+        tzr = 37
+
     if u == -np.inf:
         # no bomb covering p
-        return 0
+        return 0, bomb
+    # elif bomb_life <= blast_strength: # just a try
     elif len(history) >= u:
-        if len(history) > u + blast_strength:
+        if len(history) > u + blast_strength: # >=
             # we escape the bomb
-            return 0
+            return 0, bomb
         else:
-            # even the bomb "most far away" would have exploded upon arrival
-            return np.inf
+            return np.inf, bomb
     elif len(history) >= l:
-        if len(history) > l + blast_strength:
+        if len(history) > l + blast_strength: # >=
             # we escape the bomb
-            return 0
+            return 0, bomb
         else:
             # we cannot even escape the nearest bomb
-            return np.inf
+            return np.inf, bomb # we took this
 
     # if the amount of steps taken (len(history)) is smaller than the amount of steps needed to escape the nearest bomb
     num = np.inf
@@ -313,9 +373,11 @@ def min_evade_step(board, p, history, blast_strength, invalid_values):
         if q not in history and utility.is_valid_direction(board, p, a, invalid_values): # utility.position_on_board(board, q):
             history.append(q)
 
-            num = min(num, 1 + min_evade_step(board, q, history, blast_strength, invalid_values))
+            num = min(num, 1 + min_evade_step(board, q, history, blast_strength, invalid_values,
+                                              bomb_positions, bomb_blast_strengths,
+                                              copy.deepcopy(bomb_lifes), call_from_select)[0])
 
-    return num
+    return num, bomb
 
 
 def get_jitter_details(xposition, yposition):
