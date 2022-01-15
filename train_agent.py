@@ -180,11 +180,11 @@ def train(device_name="cuda:0", model_folder="group20/resources", model_file="im
     # region --- TRAIN CRITIC NETWORK ---
     # episodes_per_training_round = [10000, 10000, 10000, 60000]
     # episodes_per_training_round = [10, 1000, 2000, 6000] # removed 0s # 310 (300 with rd 6 and 10 with rd 25)
-    episodes_per_training_round = [100, 100, 100, 100]
+    episodes_per_training_round = [250, 250, 500, 1500]
     # print_stats = 10
     # episodes_per_training_round = [amount - (amount % batch_size) for amount in episodes_per_training_round]
 
-    training_round = 1
+    training_round = 1 # 1
 
     # create new randomized environment
     env, trainee, trainee_id, opponent, opponent_id = util.create_training_env(
@@ -202,14 +202,14 @@ def train(device_name="cuda:0", model_folder="group20/resources", model_file="im
         params=training_agent.actor_critic.parameters(), lr=lr, weight_decay=training_agent.l2_const)
     training_agent.actor_critic.train()
 
-    model_files = ['model_1.pt', 'model_2.pt', 'model_3.pt', 'model_4.pt']
+    model_files = ['model_1_', 'model_2_', 'model_3_', 'model_4_']
     action_strings = ['Stop', 'Up', 'Down', 'Left', 'Right', 'Bomb']
 
-    for z in range(0, len(episodes_per_training_round)):
+    for z in range(0, len(episodes_per_training_round)): # 0
         episodes = episodes_per_training_round[z]
         tqdm.write('Critic network training round %d (%g games)' % (training_round, episodes))
 
-        model_path = os.path.join(model_folder, model_files[z])
+        # model_path = os.path.join(model_folder, model_files[z])
 
         episode_count = 0
 
@@ -294,9 +294,9 @@ def train(device_name="cuda:0", model_folder="group20/resources", model_file="im
                 obs_trainee_featurized_next = featurize_simple(current_state[trainee_id], device)
 
                 # set new root of tree
-                if training_agent.tree is not None:
-                    last_selected_actions = actions.copy()
-                    training_agent.tree.update_root(last_selected_actions, current_state[trainee_id], trainee_id)
+                # if training_agent.tree is not None:
+                #     last_selected_actions = actions.copy()
+                #     training_agent.tree.update_root(current_state[trainee_id], trainee_id)
 
                 # preparing transition (s, a, r, s', terminal) to be stored in replay buffer
                 penalty = torch.tensor([penalty], device=device)
@@ -362,6 +362,7 @@ def train(device_name="cuda:0", model_folder="group20/resources", model_file="im
                     obs_opponent = current_state[opponent_id]
 
                     if episode_count % save_model == 0 and episode_count > 0:
+                        model_path = os.path.join(model_folder, model_files[z] + f"{episode_count}.pt")
                         torch.save(training_agent.actor_critic.state_dict(), model_path)
 
                     if (episode_count % print_stats == 0 and episode_count > 0) or episode_count - 1 == episodes:
@@ -413,6 +414,7 @@ def train(device_name="cuda:0", model_folder="group20/resources", model_file="im
                 nr_iterations += 1
         training_round += 1
 
+        model_path = os.path.join(model_folder, model_files[z] + f"finished.pt")
         torch.save(training_agent.actor_critic.state_dict(), model_path)
         tqdm.write("--- just saved models ---")
     # endregion
@@ -421,6 +423,6 @@ def train(device_name="cuda:0", model_folder="group20/resources", model_file="im
 if __name__ == "__main__":
     device = 'cuda:0'
     model = os.path.join("group20", "resources")
-    # print("change ") # render
+    # print("change name and render") # render
     train(device_name=device, model_folder=model, load_imitation_model=True,
           render=False, model_file='imitation_model.pt')  # To change

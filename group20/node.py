@@ -20,15 +20,9 @@ class Node(MCTSNode):
         its visit-count-adjusted prior score u.
         """
 
-    def get_unexplored(self):
-        pass
-
-    def find_random_child(self):
-        pass
-
     def __init__(self, parent, state, agent_id, prior_p, obs=None):
         self._parent = parent
-        self.total_reward = 0
+        # self.total_reward = 0
         self.visit_count = 0
         # state is a list of: 0. Board, 1. Agents, 2. Bombs, 3. Items, 4. Flames
         self.state = state
@@ -37,7 +31,7 @@ class Node(MCTSNode):
         self.children = dict()
 
         # new vars
-        self.n_visits = 0
+        # self.n_visits = 0
         self._Q = 0
         self._u = 0
         self._P = prior_p
@@ -136,10 +130,11 @@ class Node(MCTSNode):
 
         pruned_actions = [a for a in range(6) if not self.prune(a, is_opponent=False)]
         if len(pruned_actions) == 0:
+            print("it happended, i forgot something to prune (node) 1")
             pruned_actions = [constants.Action.Stop.value]
 
         for action, prob in action_priors:
-            if action in pruned_actions: # added new
+            if action in pruned_actions:
                 for opponent_action in self.pruned_opponent_actions:
                     actions = [None, None]
                     actions[self.agent_id] = action
@@ -173,15 +168,15 @@ class Node(MCTSNode):
 
     def get_value(self, c_puct):
         self._u = (c_puct * self._P *
-                   np.sqrt(self._parent.n_visits) / (1 + self.n_visits))
+                   np.sqrt(self._parent.visit_count) / (1 + self.visit_count))
         return self._Q + self._u
 
     def get_children(self):
         return self.children
 
     def update(self, reward):
-        self.n_visits += 1
-        self._Q += 1.0 * (reward - self._Q) / self.n_visits
+        self.incr_visit_count() # self.visit_count += 1
+        self._Q += 1.0 * (reward - self._Q) / self.visit_count
 
     def update_recursive(self, reward):
         if self._parent:
@@ -194,11 +189,11 @@ class Node(MCTSNode):
 
     def get_total_reward(self):
         """ Returns Total reward of node (Q) """
-        return self.total_reward
+        return self._Q
 
     def incr_reward(self, reward):
         """ Update reward of node in backpropagation step of MCTS """
-        self.total_reward += reward
+        self._Q += reward
 
     def get_visit_count(self):
         """ Returns Total number of times visited this node (N) """

@@ -97,10 +97,10 @@ class MCTS:
                 path.append(unexplored)
                 return path
 
-            # node = self._uct_select(node)  # descend a layer deeper
+            node = self._uct_select(node)  # descend a layer deeper
 
             # new code
-            node = node.select_greedily(self._c_puct)
+            # node = node.select_greedily(self._c_puct)
 
     def expand_root(self, root_node):
         if root_node.obs is None:
@@ -128,6 +128,7 @@ class MCTS:
             depth += 1
 
     def _backpropagate(self, path, reward):
+
         # Send the reward back up to the ancestors of the leaf
         for node in reversed(path):
             node.incr_visit_count()
@@ -136,7 +137,7 @@ class MCTS:
         # increase total number of steps
         self.N += 1
 
-        path[-1].update_recursive(reward)
+        # path[-1].update_recursive(reward)
 
     def _uct_select(self, node):
         """ Select a child of node, balancing exploration & exploitation """
@@ -167,17 +168,18 @@ class MCTS:
 
         action_probs, state_v = self._policy(node.obs, self.agent_id, device=self.device)
         actions, probs = zip(*action_probs)
-        return list(actions), probs, state_v
+        return list(actions), list(probs), state_v
 
     def _find_random_child(self, node):
         actions, probs, _ = self.get_nn_outputs(node)
 
         pruned_actions = [a for a in actions if not node.prune(a, is_opponent=False)]
         if len(pruned_actions) == 0:
+            print("it happended, i forgot something to prune (mcts) 2")
             pruned_actions = [constants.Action.Stop.value]
 
         action_list = [None, None]
-        action_list[self.agent_id] = np.random.choice(pruned_actions) # , p=probs)
+        action_list[self.agent_id] = np.random.choice(pruned_actions)
         action_list[1 - self.agent_id] = np.random.choice(node.pruned_opponent_actions)
 
         sel_actions = (action_list[0], action_list[1])
@@ -185,11 +187,22 @@ class MCTS:
         if sel_actions in node.children.keys():
             return node.children[sel_actions]
         else:
+            prob = 1.0
+            # print('debug', actions, action_list, action_list[self.agent_id], self.agent_id)
+            # return node.forward(sel_actions, 0)
             if action_list[self.agent_id] not in actions:
-                print('debug', actions, action_list, action_list[self.agent_id], self.agent_id)
-                return node.forward(sel_actions, 0)
-            idx = actions.index(action_list[self.agent_id])
-            prob = probs[idx]
+                print("fail 1")
+                if action_list[1-self.agent_id] in actions:
+                    idx = actions.index(action_list[1-self.agent_id])
+                    prob = probs[idx]
+                    print("solution 1", actions)
+                elif len(actions) > 0:
+                    sel_actions = (actions[0], action_list[1])
+                    prob = probs[0]
+                    print("solution 2", actions)
+            else:
+                idx = actions.index(action_list[self.agent_id])
+                prob = probs[idx]
             child = node.forward(sel_actions, prob)
             return child
 
@@ -199,6 +212,7 @@ class MCTS:
 
         pruned_actions = [a for a in actions if not node.prune(a, is_opponent=False)]
         if len(pruned_actions) == 0:
+            print("it happended, i forgot something to prune (mcts) 3")
             pruned_actions = [constants.Action.Stop.value]
 
         action_list = [None, None]
@@ -217,36 +231,50 @@ class MCTS:
         node.children[sel_actions] = child
         return child
 
-    def update_root(self, last_selected_actions, obs, agent_id):
+    def update_root(self, obs, agent_id):
         game_state = game_state_from_obs(obs, self.agent_id)
 
-        if (last_selected_actions[0], last_selected_actions[1]) not in self._root.children.keys():
-            self._root = node_py.Node(None, game_state, agent_id, 1, obs=obs)
-        else:
-            self._root = self._root.children[(last_selected_actions[0], last_selected_actions[1])]
-            self._root._parent = None
-            self._root.obs = obs
-            self.root_state = game_state
+        self._root = node_py.Node(None, game_state, agent_id, 1.0, obs=obs)
 
-        if len(self._root.children) == 0:
-            self.expand_root(self._root)
+        self.expand_root(self._root)
 
-    def set_root_obs_state(self, obs, safe_actions):
-        self._root.obs = obs
-        game_state = game_state_from_obs(obs, self.agent_id)
-        self.root_state = game_state
+        # if set(np.array(list(self._root.children.keys()))[:, 1-agent_id]) == {0}:
+        #     last_selected_actions[1-agent_id] = 0
 
-        for key in list(self._root.children):
-            if key[self.agent_id] not in safe_actions:
-                del self._root.children[key]
+
+        # if (last_selected_actions[0], last_selected_actions[1]) not in self._root.children.keys():
+        #     self._root = node_py.Node(None, game_state, agent_id, 1, obs=obs)
+        # else:
+        #     self._root = self._root.children[(last_selected_actions[0], last_selected_actions[1])]
+        #     # self._root._P = 1.0
+        #     self._root._parent = None
+        #     self._root.obs = obs
+        #     self.root_state = game_state
+
+        # if len(self._root.children) == 0:
+
+
+    # def set_root_obs_state(self, obs, safe_actions=None):
+    #     self._root.obs = obs
+    #     game_state = game_state_from_obs(obs, self.agent_id)
+    #     self.root_state = game_state
+    #
+    #     # for key in list(self._root.children):
+    #     #     if key[self.agent_id] not in safe_actions:
+    #     #         print("a child to many", self._root.children[key], safe_actions) # to delete
+    #     #         del self._root.children[key]
 
     def get_move_probs(self, temp=1e-3):
-        act_visits = [(act[self.agent_id], n.n_visits) for act, n in self._root.children.items()]
+        act_visits = [(act[self.agent_id], n.get_visit_count()) for act, n in self._root.children.items()]
         act_visits = np.array(act_visits)
 
         visits = []
         for i in range(6):
-            visits.extend(act_visits[act_visits[:, 0] == i][:, 1])
+            if len(act_visits.shape) == 2:
+                visits.extend(act_visits[act_visits[:, 0] == i][:, 1])
+            else:
+                print("debug 2", act_visits)
+                return self.action_space.sample(), [1.0]
 
         acts, _ = zip(*act_visits)
 
@@ -271,19 +299,19 @@ class MCTSNode(ABC):
         # returns all children
         return list()
 
-    @abstractmethod
-    def get_unexplored(self):
-        # All possible action combinations that have not been explored yet
-        return list()
+    # @abstractmethod
+    # def get_unexplored(self):
+    #     # All possible action combinations that have not been explored yet
+    #     return list()
 
     @abstractmethod
     def get_total_reward(self):
         # total reward of a node
         return 0
 
-    @abstractmethod
-    def incr_reward(self, reward):
-        return 0
+    # @abstractmethod
+    # def incr_reward(self, reward):
+    #     return 0
 
     @abstractmethod
     def get_visit_count(self):
@@ -294,10 +322,10 @@ class MCTSNode(ABC):
     def incr_visit_count(self):
         return 0
 
-    @abstractmethod
-    def find_random_child(self):
-        # Random successor of this board state
-        return None
+    # @abstractmethod
+    # def find_random_child(self):
+    #     # Random successor of this board state
+    #     return None
 
     @abstractmethod
     def is_terminal(self):
