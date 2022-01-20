@@ -5,21 +5,7 @@ from pommerman import constants
 from pommerman import characters
 
 
-# we have to create a game state from the observations
-# in this example we only use an approximation of the game state, this can be improved
-# approximations are:
-#  - flames: initialized with 2 ticks (might be 1) (done)
-#  - agents: initialized with ammo=2 (might be more or less) (done)
-#  - bombs: do not consider, which agent placed the bomb,
-#           after explosion this would increase the agent's ammo again
-#  - items: we do not know if an item is placed below a removable tile
-
-# board, agents, bombs, items, flames
 def game_state_from_obs(obs, agent_id):
-    # TODO: think about removing some of the approximations and replacing them
-    #   with exact values (e.g. tracking own and opponent's ammo and using exact flame life)
-
-
     game_state = [
         obs["board"],
         convert_agents(obs["board"], obs["ammo"], agent_id),
@@ -55,7 +41,6 @@ def make_bomb_items(ret):
 def convert_agents(board, ammo, agent_id):
     """ creates two 'clones' of the actual agents """
     ret = []
-    # agent board ids are 10 and 11 in two-player games
     for aid in [10, 11]:
         locations = np.where(board == aid)
         agt = agents.DummyAgent()

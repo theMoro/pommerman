@@ -1,5 +1,4 @@
 import copy
-import random
 import numpy as np
 
 from pommerman.constants import Action
@@ -16,38 +15,23 @@ ACCESSIBLE_TILES = [Item.Passage.value, Item.Kick.value, Item.IncrRange.value, I
 
 class Node(MCTSNode):
     """A node in the MCTS tree.
-        Each node keeps track of its own value Q, prior probability P, and
+        Each node keeps track of its own value Q (=total reward), prior probability P, and
         its visit-count-adjusted prior score u.
         """
 
     def __init__(self, parent, state, agent_id, prior_p, obs=None):
-        self._parent = parent
-        # self.total_reward = 0
-        self.visit_count = 0
-        # state is a list of: 0. Board, 1. Agents, 2. Bombs, 3. Items, 4. Flames
-        self.state = state
         self.agent_id = agent_id
-
+        self._parent = parent
         self.children = dict()
+        self.obs = obs
 
-        # new vars
-        # self.n_visits = 0
+        self.visit_count = 0
         self._Q = 0
         self._u = 0
         self._P = prior_p
 
-        # board = state[0]
-        # agents = state[1]
-        # bombs = state[2]
-        # flames = state[4]
-        #
-        # if obs is None:
-        #     fm = ForwardModel()
-        #     obss = fm.get_observations(board, agents, bombs, flames, False, 10,
-        #                                constants.GameType.FFA, 'pommerman.envs.v0:Pomme')
-        #     obs = obss[agent_id]
-        #
-        self.obs = obs
+        # state is a list of: 0. Board, 1. Agents, 2. Bombs, 3. Items, 4. Flames
+        self.state = state
 
         self.pruned_opponent_actions = [a for a in range(6) if not self.prune(a)]
 
@@ -58,9 +42,9 @@ class Node(MCTSNode):
         flames = self.state[4]
 
         fm = ForwardModel()
-        obss = fm.get_observations(board, agents, bombs, flames, False, 10,
+        observations = fm.get_observations(board, agents, bombs, flames, False, 10,
                                    constants.GameType.FFA, 'pommerman.envs.v0:Pomme')
-        self.obs = obss[self.agent_id]
+        self.obs = observations[self.agent_id]
 
     def get_my_children_actions(self):
         my_actions = []
@@ -71,9 +55,6 @@ class Node(MCTSNode):
         return my_actions
 
     def prune(self, action, is_opponent=True):
-        # TODO: here you can think about more complex stategies to prune moves,
-        #   which allows you to create deeper search trees (very important!)
-        # remember: two agents -> ids: 0 and 1
         own_agent = self.state[1][self.agent_id]
         opponent_agent = self.state[1][1 - self.agent_id]
         own_position = own_agent.position
@@ -81,19 +62,16 @@ class Node(MCTSNode):
         man_dist = manhattan_dist(own_position, opponent_position)
         if is_opponent and man_dist > 6 and action != Action.Stop.value:
             # we do not model the opponent, if it is more than 6 steps away
-            return True
-
-        # a lot of moves (e.g. bumping into a wall or wooden tile) actually result in stop moves
-        # we do not have to consider, since they lead to the same result as actually playing a stop move
+            return True  # prune action
 
         if is_opponent:
             if self._is_legal_action(opponent_position, action):
-                return False  # not prune actions
+                return False  # not prune action
         else:
             if self._is_legal_action(own_position, action):
-                return False
+                return False # not prune action
 
-        return True
+        return True  # prune action
 
     def _is_legal_action(self, position, action):
         """ prune moves that lead to stop move"""
@@ -104,7 +82,7 @@ class Node(MCTSNode):
         bombs = [bomb.position for bomb in bombs]
         row = position[0]
         col = position[1]
-        # if it a bomb move, check if there is already a bomb planted on this field
+        # if it's a bomb move, check if there is already a bomb planted on this field
         if action == Action.Bomb.value and (row, col) in bombs:
             return False
 
@@ -130,7 +108,7 @@ class Node(MCTSNode):
 
         pruned_actions = [a for a in range(6) if not self.prune(a, is_opponent=False)]
         if len(pruned_actions) == 0:
-            print("it happended, i forgot something to prune (node) 1")
+            print("LOG: node.py, line 112: len(pruned_actions) == 0")
             pruned_actions = [constants.Action.Stop.value]
 
         for action, prob in action_priors:
@@ -175,7 +153,7 @@ class Node(MCTSNode):
         return self.children
 
     def update(self, reward):
-        self.incr_visit_count() # self.visit_count += 1
+        self.incr_visit_count()
         self._Q += 1.0 * (reward - self._Q) / self.visit_count
 
     def update_recursive(self, reward):
@@ -224,64 +202,6 @@ class Node(MCTSNode):
 
 def manhattan_dist(pos1, pos2):
     return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
-
-
-# def _value_func(state, root_state, agent_id, actor_critic_nn, obs, device='cpu'):
-#     # TODO: here you need to assign a value to a game state, for example the evaluation can
-#     #   be based on the number of blasted clouds, the number of collected items the distance to the opponent, ...
-#     # an example how a numerical value can be derived:
-#     board = state[0]
-#
-#
-#
-#     obs_featurized = featurize_simple(obs, device=device)
-#     _, score, _ = actor_critic_nn.evaluate(obs_featurized)
-#     return score.item()
-
-
-
-    # obs_opponent = obss[1 - agent_id]
-
-    # score = 0.0  # game is not over yet, we have to think about additional evaluation criteria
-    #
-    # own_position = own_agent.position
-    # opponent_position = opponent_agent.position
-    #
-    # # if agent cannot move in any direction than its locked up either by a bomb,
-    # # or the opponent agent -> very bad position
-    # down_cond = own_position[0] + 1 >= len(board) or \
-    #     board[own_position[0] + 1][own_position[1]] not in ACCESSIBLE_TILES
-    # up_cond = own_position[0] - 1 < 0 or \
-    #     board[own_position[0] - 1][own_position[1]] not in ACCESSIBLE_TILES
-    # right_cond = own_position[1] + 1 >= len(board) or \
-    #     board[own_position[0]][own_position[1] + 1] not in ACCESSIBLE_TILES
-    # left_cond = own_position[1] - 1 < 0 or \
-    #     board[own_position[0]][own_position[1] - 1] not in ACCESSIBLE_TILES
-    #
-    # if down_cond and up_cond and right_cond and left_cond:
-    #     score += -0.5
-    #
-    # # we want to push our agent towards the opponent
-    # man_dist = manhattan_dist(own_position, opponent_position)
-    # score += 0.005*(10-man_dist)  # the closer to the opponent the better
-    #
-    # # we want to collect items (forward model was modified to make this easier)
-    # score += own_agent.picked_up_items * 0.05
-    #
-    # # since search depth is limited, we need to reward well placed bombs instead
-    # # of only rewarding collecting items
-    # for bomb in state[2]:
-    #     # we only reward bombs placed next to wood - you can improve this
-    #     loc = bomb.position
-    #     if loc[0]-1 >= 0 and board[loc[0]-1][loc[1]] == Item.Wood.value:
-    #         score += 0.02
-    #     if loc[0]+1 < len(board) and board[loc[0]+1][loc[1]] == Item.Wood.value:
-    #         score += 0.02
-    #     if loc[1]-1 >= 0 and board[loc[0]][loc[1]-1] == Item.Wood.value:
-    #         score += 0.02
-    #     if loc[1]+1 < len(board) and board[loc[0]][loc[1]+1] == Item.Wood.value:
-    #         score += 0.02
-    # return score
 
 
 def _copy_agents(agents_to_copy):

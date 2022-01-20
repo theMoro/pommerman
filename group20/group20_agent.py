@@ -2,14 +2,17 @@ import pkg_resources
 import os
 import torch
 import time
+import numpy as np
 
-from pommerman import agents
+from pommerman import agents, constants
 
-from group20 import net_input
 from group20 import trainer
 from group20.game_state import game_state_from_obs
 from group20.node import Node
 from group20.mcts import MCTS
+from group20 import util
+
+from group20.trainer import Trainer
 
 
 class Group20Agent(agents.BaseAgent):
@@ -25,12 +28,9 @@ class Group20Agent(agents.BaseAgent):
     def __init__(self, *args, **kwargs):
         super(Group20Agent, self).__init__(*args, **kwargs)
 
-        self.model_file_name = 'imitation_model.pt'
+        self.model_file_name = 'model_4_finished.pt'
 
-        ## new
-        self.device = torch.device("cpu")  # you only have access to cpu during the tournament
-        # place your model in the 'resources' folder and access them like shown here
-        # change 'learning_agent' to the name of your own package (e.g. group01)
+        self.device = torch.device("cpu")
         data_path = pkg_resources.resource_filename('group20', 'resources')
         model_file = os.path.join(data_path, self.model_file_name)
 
@@ -41,8 +41,6 @@ class Group20Agent(agents.BaseAgent):
         self.trainer.actor_critic.to(self.device)
 
         self.trainer.actor_critic.eval()
-
-        self.new_game = True
         self.tree = None
 
         self.policy_value_fn = self.trainer.policy_value_fn
@@ -88,26 +86,41 @@ class Group20Agent(agents.BaseAgent):
         """
         start_time = time.time()
 
-        if self.new_game:
-            if obs['position'] == (1, 1):
-                self.agent_id = 0
-            elif obs['position'] == (9, 9):
-                self.agent_id = 1
-
-        self.new_game = False
-
-        # tree
-        if self.tree is None: # OUT-COMMENT THIS !!!
+        if obs['step_count'] == 0:
             game_state = game_state_from_obs(obs, self.agent_id)
             root = Node(None, game_state, self.agent_id, 1.0, obs=obs)
             self.tree = MCTS(range(6), self.agent_id, root, self.policy_value_fn, device=self.device)
             # before we rollout the tree we expand the first set of children
             self.tree.expand_root(root)
+        else:
+            self.tree.update_root(obs, self.agent_id)
 
-        self.tree.set_root_obs_state(obs)
-
-        while time.time() - start_time < 0.45:
+        while time.time() - start_time < 0.4:
             self.tree.do_rollout()
 
-        move = self.tree.choose()
+        bombs = util.convert_bombs(np.array(obs['bomb_blast_strength']), np.array(obs['bomb_life']))
+
+        valid_directions = [vd.value for vd in Trainer.get_valid_actions(obs['board'], obs['position'], obs['can_kick'])]
+        valid_directions.append(constants.Action.Bomb.value)
+
+        bomb_positions = [b['position'] for b in bombs] if len(bombs) > 0 else []
+        bomb_blast_strengths = [b['blast_strength'] for b in bombs] if len(bombs) > 0 else []
+        position = obs['position']
+
+        _, probs = self.tree.get_move_probs()
+
+        if position in bomb_positions:
+            idx = bomb_positions.index(position)
+            bomb_best_action, bomb_safe_actions = Trainer.get_best_action_bomb(
+                obs['board'], position, bomb_blast_strengths[idx], valid_directions)
+
+            if bomb_best_action is not None:
+                move = bomb_best_action
+            elif len(bomb_safe_actions) > 0:
+                move = bomb_safe_actions[np.array(probs[np.array(bomb_safe_actions)]).argmax()]
+            else:
+                move = constants.Action.Stop.value
+        else:
+            move = self.tree.choose()
+
         return move

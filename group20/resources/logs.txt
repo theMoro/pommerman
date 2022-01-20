@@ -1,9 +1,0 @@
-Running on device: cuda:0
-Traceback (most recent call last):
-  File "/home/tobias/OneDrive/JKU/3/ai/challenge/pommerman_students/student_agents/group20/train_agent.py", line 428, in <module>
-    render=True, model_file='imitation_model.pt')  # To change
-  File "/home/tobias/OneDrive/JKU/3/ai/challenge/pommerman_students/student_agents/group20/train_agent.py", line 63, in train
-    obs_trainee_featurized = featurize_simple(obs_trainee, device)
-  File "/home/tobias/OneDrive/JKU/3/ai/challenge/pommerman_students/student_agents/group20/group20/net_input.py", line 10, in featurize_simple
-    return torch.tensor([np_featurized]).to(device)
-KeyboardInterrupt

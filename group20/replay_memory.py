@@ -1,8 +1,7 @@
-import random
 from collections import namedtuple
 
 Transition = namedtuple('Transition',
-                        ('state', 'action', 'action_probs', 'reward', 'terminal', 'penalty')) # added logprob
+                        ('state', 'action', 'action_probs', 'reward', 'terminal', 'penalty'))
 
 
 class ReplayMemory(object):
@@ -21,12 +20,9 @@ class ReplayMemory(object):
         self.memory[self.position] = Transition(*args)
         self.position = (self.position + 1) % self.capacity
 
-    def sample(self, horizon_size):
-        # sample a batch uniformly from memory
-        # return random.sample(self.memory, batch_size)
-
+    def get_last_n_samples(self, n):
         # return the last pushed data samples
-        return self.memory[-horizon_size:]
+        return self.memory[-n:]
 
     def __len__(self):
         return len(self.memory)

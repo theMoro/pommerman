@@ -10,6 +10,10 @@ import numpy as np
 from pommerman.agents import base_agent
 from pommerman import constants, utility
 
+"""
+    Just Copied code of SimpleAgent and edited, such that the agent cannot lay bombs
+"""
+
 
 class SimpleAgentNoBombs(base_agent.BaseAgent):
     """This is a baseline agent. After you can beat it, submit your agent to
@@ -73,11 +77,11 @@ class SimpleAgentNoBombs(base_agent.BaseAgent):
             return direction.value
 
         # Maybe lay a bomb if we are within a space of a wooden wall.
-        if self._near_wood(my_position, items, dist, prev, 1):
-            # if self._maybe_bomb(ammo, blast_strength, items, dist, my_position):
-            #     return constants.Action.Bomb.value
-            # else:
-            return constants.Action.Stop.value
+        # if self._near_wood(my_position, items, dist, prev, 1):
+        #     # if self._maybe_bomb(ammo, blast_strength, items, dist, my_position):
+        #     #     return constants.Action.Bomb.value
+        #     # else:
+        #     return constants.Action.Stop.value
 
         # Move towards a wooden wall if there is one within two reachable spaces and you have a bomb.
         direction = self._near_wood(my_position, items, dist, prev, 2)

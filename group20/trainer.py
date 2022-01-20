@@ -1,25 +1,20 @@
-from typing import Any
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.distributions import Normal, MultivariateNormal, Categorical
-import time
 from torch.autograd import Variable
 
 from pommerman import utility, constants
 
-from group20.replay_memory import ReplayMemory, Transition
+from group20.replay_memory import Transition
 from group20 import util
 from group20.game_state import game_state_from_obs
 from group20.node import Node
 from group20.mcts import MCTS
-from group20.net_input import featurize_simple, featurize_simple_array
+from group20.net_input import featurize_simple
 
 import numpy as np
-import random
-from tqdm import tqdm
+# from tqdm import tqdm
 
 
 def set_learning_rate(optimizer, lr):
@@ -31,9 +26,7 @@ def set_learning_rate(optimizer, lr):
 class ActorCritic(nn.Module):
     def __init__(self, board_size=11, num_boards=16, num_actions=6, lr=1e-3, device='cpu'):
         super(ActorCritic, self).__init__()
-
         self.device = device
-
         self.board_size = board_size
         self.num_boards = num_boards
         self.num_actions = num_actions
@@ -41,6 +34,7 @@ class ActorCritic(nn.Module):
         # common layers
         self.conv1 = nn.Conv2d(in_channels=num_boards, out_channels=32, kernel_size=5, stride=1, padding=1)
         self.b_norm_1 = nn.BatchNorm2d(32)
+
         # relu
         self.conv2 = nn.Conv2d(in_channels=32, out_channels=16, kernel_size=3, stride=1, padding=1)
         self.b_norm_2 = nn.BatchNorm2d(16)
@@ -91,19 +85,15 @@ class Trainer():
         self.lr = lr
         self.lr_multiplier = 1.0
         self.kl_targ = 0.02
-
         self.gamma = gamma
         self.k_epochs = 5
-
         self.batch_size = batch_size
 
         self.actor_critic = ActorCritic(board_size, num_boards, num_actions,
                                         lr=lr, device=device)
 
         self.tree = None
-
         self.MseLoss = nn.MSELoss()
-
         self.l2_const = 1e-4
 
         self.optimizer = optim.Adam(params=self.actor_critic.parameters(), lr=lr, weight_decay=self.l2_const)
@@ -123,36 +113,6 @@ class Trainer():
 
         return board[pos] in items
 
-    # @staticmethod
-    # def in_dangerous_position(board, pos, bombs, bomb_lifes, blast_strengths):
-    #     for i, bomb in enumerate(bombs):
-    #         if 0 < bomb_lifes[i] <= 2:
-    #             if bomb[0] == pos[0]:
-    #                 b = bomb[1]
-    #                 p = pos[1]
-    #                 walkable = True
-    #
-    #                 for middle in range(min(b, p) + 1, max(b, p)):
-    #                     if not Trainer.is_walkable_tile(board, (pos[0], middle), extra_item=constants.Item.Wood):
-    #                         walkable = False
-    #
-    #                 if walkable and abs(p - b) <= blast_strengths[i]:
-    #                     return True
-    #
-    #             if bomb[1] == pos[1]:
-    #                 b = bomb[0]
-    #                 p = pos[0]
-    #                 walkable = True
-    #
-    #                 for middle in range(min(b, p) + 1, max(b, p)):
-    #                     if not Trainer.is_walkable_tile(board, (middle, pos[1]), extra_item=constants.Item.Wood):
-    #                         walkable = False
-    #
-    #                 if walkable and abs(p - b) <= blast_strengths[i]:
-    #                     return True
-    #
-    #     return False
-
     @staticmethod
     def get_best_action_bomb(board, position, bomb_blast_strength, valid_directions):
         if constants.Action.Stop.value in valid_directions:
@@ -169,7 +129,7 @@ class Trainer():
 
         def count_walkable_positions(pos):
             sum_of_new_pos = 0
-            for a in actions:  # valid_directions
+            for a in actions:
                 q = utility.get_next_position(pos, a)
                 if q not in checked_positions and 0 <= q[0] <= 10 and 0 <= q[1] <= 10 \
                         and Trainer.is_walkable_tile(board, q):
@@ -207,7 +167,7 @@ class Trainer():
             ]
 
         invalid_values = [item.value for item in
-                          [constants.Item.Rigid, constants.Item.Wood, constants.Item.Flames]]  # Flames
+                          [constants.Item.Rigid, constants.Item.Wood, constants.Item.Flames]]
 
         if not can_kick:
             invalid_values.append(constants.Item.Bomb.value)
@@ -222,8 +182,8 @@ class Trainer():
     """
 
     @staticmethod
-    def get_safe_actions(board, obs, trainee_id,
-                         position, blast_strength, bombs, ammo, can_kick, flames, actions=None, call_from_select=False):
+    def get_safe_actions(board, position, blast_strength, bombs, ammo,
+                         can_kick, actions=None, call_from_select=False):
 
         bomb_positions = [b['position'] for b in bombs] if len(bombs) > 0 else []
         bomb_lifes = [b['bomb_life'] for b in bombs] if len(bombs) > 0 else []
@@ -247,8 +207,6 @@ class Trainer():
         last_bomb_life = 1
         last_bomb_pos = None
 
-        print_stats = False
-
         if len(bomb_positions) > 0:
             # sort actions
             bomb_positions = np.array(bomb_positions)
@@ -262,13 +220,18 @@ class Trainer():
 
             for a in actions:
                 if a in valid_directions:
-                    board_, q, bomb_ps = util.get_next_position_with_board_copy_fast(board, position, bomb_positions,
-                                                                            bomb_lifes, flames, can_kick,
-                                                                            bomb_blast_strengths, a)
+                    # calling util.get_next_position_with_board_copy_fast() instead of
+                    # util.get_next_position_with_board_copy(), because it works way faster.
+                    # (the latter function actually calls the step function of the ForwardModel, where many additional
+                    # (smaller) details are considered, that's why it takes longer.)
+                    board_, q, bomb_ps = util.get_next_position_with_board_copy_fast(board, position,
+                                                                                     bomb_positions.copy(),
+                                                                                     bomb_lifes, can_kick,
+                                                                                     bomb_blast_strengths, a)
 
                     # board_, q = util.get_next_position_with_board_copy(obs, a, position, trainee_id)
 
-                    if q is not None:  # and q not in bomb_positions: # (q in bomb_positions and not can_kick):
+                    if q is not None:
                         if a == constants.Action.Stop:
                             H = [None, q]
                         else:
@@ -280,16 +243,22 @@ class Trainer():
                         m, bomb_pos_two = util.find_min_bomb_covering(board_, position)
 
                         if bomb_pos is not None:
-                            idx = bomb_ps.index([bomb_pos[0], bomb_pos[1]])
-                            bomb_life = bomb_lifes[idx]
+                            if [bomb_pos[0], bomb_pos[1]] in bomb_ps:
+                                idx = bomb_ps.index([bomb_pos[0], bomb_pos[1]])
+                            else:
+                                idx = 0
 
+                            bomb_life = bomb_lifes[idx]
                             last_bomb_life = bomb_life
                             last_bomb_pos = bomb_pos
                         elif bomb_pos_two is not None:
                             bomb_pos = bomb_pos_two
-                            idx = bomb_ps.index([bomb_pos[0], bomb_pos[1]])
-                            bomb_life = bomb_lifes[idx]
+                            if [bomb_pos[0], bomb_pos[1]] in bomb_ps:
+                                idx = bomb_ps.index([bomb_pos[0], bomb_pos[1]])
+                            else:
+                                idx = 0
 
+                            bomb_life = bomb_lifes[idx]
                             last_bomb_life = bomb_life
                             last_bomb_pos = bomb_pos
                         elif len(bomb_lifes) == 1:
@@ -299,35 +268,17 @@ class Trainer():
                             bomb_life = last_bomb_life
                             bomb_pos = last_bomb_pos
 
-                        # if call_from_select and np.array(bomb_pos == position).all():
-                        #     debug = 1
-
-                        limit = max(n + 1, 2) if n != np.inf else 2  # maybe not correct
-
-                        # if n >= 2 and n != np.inf and call_from_select:
-                        #     print_stats = True
+                        limit = max(n + 1, 2) if n != np.inf else 2
 
                         if 0 < bomb_life <= limit \
                                 and m != np.inf and np.array(bomb_pos != position).any():
                             if m > n:
-                                # if print_stats and call_from_select:
-                                #     print("min_evade_step: n >= 1, is safe:", a.value, bomb_life, m, n)
-
                                 safe_actions.append(a.value)
                         elif not (0 < bomb_life <= limit and np.array(bomb_pos != position).any()):
-                            # if print_stats and call_from_select:
-                            #     print("min_evade_step: n >= 1, is safe:", a.value, bomb_life, m, n)
-
                             safe_actions.append(a.value)
                         else:
-                            # if print_stats and call_from_select:
-                            #     print("min_evade_step: n >= 1, is safe:", a.value, bomb_life, m, n)
-
                             if n == 0:
                                 safe_actions.append(a.value)
-                                #
-                                # if print_stats and call_from_select:
-                                #     print("min_evade_step: n >= 1, is safe:", a.value, bomb_life, m, n)
 
         if len(safe_actions) == 0:
             safe_actions = [v.value for v in valid_directions]
@@ -336,17 +287,12 @@ class Trainer():
                 and len(safe_actions) > 1:
             safe_actions.append(constants.Action.Bomb.value)
 
-        # if call_from_select:
-        #     print("safe_actions: ", safe_actions)
-        #     print("board: ", board, position, bomb_positions)
-
         return safe_actions
 
-    def get_penalty(self, selected_action, valid_directions, board, position, enemy, bombs,
+    def get_penalty(self, selected_action, valid_directions, board, position,
                     blast_strength, ammo, can_kick, recently_visited_positions):
 
-        # valid directions are with bomb value !!!
-
+        # valid directions are with bomb-action value
         def get_positions_in_blast_zone(pos):
             positions = [(pos[0], pos[1])]
 
@@ -365,11 +311,11 @@ class Trainer():
 
             return positions
 
-        # invalid direction
+        # invalid direction (should with current state of code never be the case)
         if selected_action not in valid_directions:
             return -0.03
 
-        # bomb and no ammo
+        # bomb and no ammo (should with current state of code never be the case)
         if selected_action == constants.Action.Bomb.value and ammo <= 0:
             return -0.03
 
@@ -406,8 +352,7 @@ class Trainer():
 
         return 0
 
-    # state = obs_featurized
-    def select_action_mcts(self, state, obs, agent_id,
+    def select_action_mcts(self, obs, agent_id,
                            jitter_actions, recently_visited_positions, new_game, device):
 
         jitter_action = None
@@ -419,27 +364,20 @@ class Trainer():
         board = obs['board']
         position = obs['position']
         blast_strength = obs['blast_strength']
-        enemies = [constants.Item(e) for e in obs['enemies']]
         bombs = util.convert_bombs(np.array(obs['bomb_blast_strength']), np.array(obs['bomb_life']))
         ammo = int(obs['ammo'])
         can_kick = bool(obs['can_kick'])
-        flame_life = obs['flame_life']
 
         bomb_positions = [b['position'] for b in bombs] if len(bombs) > 0 else []
-        bomb_lifes = [b['bomb_life'] for b in bombs] if len(bombs) > 0 else []
         bomb_blast_strengths = [b['blast_strength'] for b in bombs] if len(bombs) > 0 else []
 
         valid_directions = [vd.value for vd in self.get_valid_actions(board, position, can_kick)]
         valid_directions.append(constants.Action.Bomb.value)
 
-        # safe_actions = self.get_safe_actions(board, obs, agent_id, position,
-        #                                      blast_strength, bombs, can_kick, flame_life, call_from_select=True)
-
         # jitter
         if len(jitter_actions) > 0:
             vd_directions = valid_directions.copy()
-            safe_actions = self.get_safe_actions(board, obs, agent_id, position,
-                                                 blast_strength, bombs, ammo, can_kick, flame_life)
+            safe_actions = self.get_safe_actions(board, position, blast_strength, bombs, ammo, can_kick)
             original_safe_actions = safe_actions.copy()
             for a in jitter_actions:
                 if a in safe_actions:
@@ -478,13 +416,6 @@ class Trainer():
         acts, probs = self.tree.get_move_probs()
         move_probs[np.array(acts)] = probs
 
-        if len(acts) == 0 or len(probs) == 0:
-            acts = [0]
-            probs = [1.0]
-            safe_actionss = self.get_safe_actions(board, obs, agent_id, position, blast_strength, bombs, ammo,
-                                                  can_kick, flame_life)
-            print("yes it happened", acts, probs, safe_actionss)
-
         if jitter_action is not None:
             move = jitter_action
             jitter_success = True
@@ -504,37 +435,33 @@ class Trainer():
             else:
                 move = self.tree.choose()
 
-                # move = np.random.choice(acts,
-                #                         p=np.array(probs)) # 0.75 * np.array(probs) + 0.25 * np.random.dirichlet(0.3 * np.ones(len(probs))))
             move = torch.tensor([move], dtype=torch.int, device=device)
 
-        penalty = self.get_penalty(move, valid_directions, board, position, enemies, bombs,
+        penalty = self.get_penalty(move, valid_directions, board, position,
                                    blast_strength, ammo, can_kick, recently_visited_positions)
 
-        return move, move_probs, penalty, jitter_success  # , penalty, False
+        return move, move_probs, penalty, jitter_success
 
-    def policy_value_fn(self, obs, agent_id, device='cpu'):
+    def policy_value_fn(self, obs, device='cpu'):
         board = obs['board']
         position = obs['position']
         blast_strength = obs['blast_strength']
-        enemies = [constants.Item(e) for e in obs['enemies']]
         bombs = util.convert_bombs(np.array(obs['bomb_blast_strength']), np.array(obs['bomb_life']))
         ammo = int(obs['ammo'])
         can_kick = bool(obs['can_kick'])
-        flame_life = obs['flame_life']
 
         valid_directions = [vd.value for vd in self.get_valid_actions(board, position, can_kick)]
         valid_directions.append(constants.Action.Bomb.value)
 
-        safe_actions = self.get_safe_actions(board, obs, agent_id, position, blast_strength,
-                                             bombs, ammo, can_kick, flame_life)
+        safe_actions = self.get_safe_actions(board, position, blast_strength,
+                                             bombs, ammo, can_kick)
 
         state = featurize_simple(obs, device=device)
         log_act_probs, value = self.actor_critic(state)
         act_probs = np.exp(log_act_probs.detach().cpu().numpy()[0])
 
         act_probs = zip(safe_actions, act_probs[safe_actions])
-        # act_probs are action_nr + probability pairs
+        # act_probs: action_nr + probability pairs
         return act_probs, value.item()
 
     def calculate_returns(self, rewards, terminals, discount_factor, normalize=True, device='cpu'):
@@ -583,7 +510,7 @@ class Trainer():
         masks = torch.FloatTensor(~terminals.detach().cpu().numpy()).to(device)
 
         for r, p, v, mask in zip(reversed(rewards), reversed(penalties), reversed(values), reversed(masks)):
-            td_error = r + p + next_value * gamma * mask - v  # r + my_reward_fct + next_value * gamma ...
+            td_error = r + p + next_value * gamma * mask - v
             gae = td_error + gae * gamma * gae_lambda * mask
             next_value = v
             returns.insert(0, gae + v)
@@ -602,8 +529,8 @@ class Trainer():
         returns = self.calculate_gae(rewards, penalties, old_v, terminals, 0.99, 0.95, device=device)
         returns = Variable(returns)
 
-        value_loss = F.mse_loss(old_v.view(-1), returns)  # rewards
-        policy_loss = -torch.mean(torch.sum(torch.mul(mcts_action_probs, old_log_probs), 1))  # old_probs
+        value_loss = F.mse_loss(old_v.view(-1), returns)
+        policy_loss = -torch.mean(torch.sum(torch.mul(mcts_action_probs, old_log_probs), 1))
         loss = 0.5 * value_loss + 0.5 * policy_loss
 
         self.optimizer.zero_grad()
@@ -622,11 +549,10 @@ class Trainer():
 
     def update_mcts(self, replay_memory, horizon, device='cpu'):
         # 'state', 'action', 'action_probs', 'reward', 'terminal', 'penalty'
-        transitions = replay_memory.sample(horizon)
+        transitions = replay_memory.get_last_n_samples(horizon)
         batch = Transition(*zip(*transitions))
 
         states = torch.cat(batch.state)
-        actions = torch.cat(batch.action)
         mcts_action_probs = torch.cat(batch.action_probs)
         rewards = torch.cat(batch.reward)
         terminals = torch.cat(batch.terminal)
@@ -658,6 +584,6 @@ class Trainer():
         elif kl < self.kl_targ / 2 and self.lr_multiplier < 10:
             self.lr_multiplier *= 1.5
 
-        tqdm.write('Updating Policy: Learning rate={}, KL={}'.format(self.lr * self.lr_multiplier, kl))
+        print('Updating Policy: Learning rate={}, KL={}'.format(self.lr * self.lr_multiplier, kl))
 
         return policy_loss.item(), value_loss.item(), loss.item()
