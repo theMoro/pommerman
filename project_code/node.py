@@ -8,7 +8,7 @@ from pommerman import constants
 from pommerman import characters
 from pommerman.constants import Item
 
-from group20.mcts import MCTSNode
+from code.mcts import MCTSNode
 
 ACCESSIBLE_TILES = [Item.Passage.value, Item.Kick.value, Item.IncrRange.value, Item.ExtraBomb.value]
 

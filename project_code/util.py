@@ -4,8 +4,8 @@ import copy
 import pommerman
 from pommerman.agents import DummyAgent, SimpleAgent
 
-from group20 import simple_agent_no_bombs
-from group20.game_state import game_state_from_obs
+from code import simple_agent_no_bombs
+from code.game_state import game_state_from_obs
 
 from pommerman.forward_model import ForwardModel
 
