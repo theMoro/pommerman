@@ -9,8 +9,8 @@ from abc import ABC, abstractmethod
 import math
 import random
 import numpy as np
-from group20 import node as node_py
-from group20.game_state import game_state_from_obs
+from code import node as node_py
+from code.game_state import game_state_from_obs
 
 from pommerman import constants
 

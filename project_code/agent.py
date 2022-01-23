@@ -6,16 +6,16 @@ import numpy as np
 
 from pommerman import agents, constants
 
-from group20 import trainer
-from group20.game_state import game_state_from_obs
-from group20.node import Node
-from group20.mcts import MCTS
-from group20 import util
+from code import trainer
+from code.game_state import game_state_from_obs
+from code.node import Node
+from code.mcts import MCTS
+from code import util
 
-from group20.trainer import Trainer
+from code.trainer import Trainer
 
 
-class Group20Agent(agents.BaseAgent):
+class Agent(agents.BaseAgent):
     """
     This is the class of your agent. During the tournament an object of this class
     will be created for every game your agents plays.
@@ -26,12 +26,12 @@ class Group20Agent(agents.BaseAgent):
         in the constructor you can do initialisation that must be done before a game starts
     """
     def __init__(self, *args, **kwargs):
-        super(Group20Agent, self).__init__(*args, **kwargs)
+        super(Agent, self).__init__(*args, **kwargs)
 
         self.model_file_name = 'model_4_finished.pt'
 
         self.device = torch.device("cpu")
-        data_path = pkg_resources.resource_filename('group20', 'resources')
+        data_path = pkg_resources.resource_filename('code', 'resources')
         model_file = os.path.join(data_path, self.model_file_name)
 
         # loading the trained neural network model

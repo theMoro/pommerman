@@ -6,12 +6,12 @@ from torch.autograd import Variable
 
 from pommerman import utility, constants
 
-from group20.replay_memory import Transition
-from group20 import util
-from group20.game_state import game_state_from_obs
-from group20.node import Node
-from group20.mcts import MCTS
-from group20.net_input import featurize_simple
+from code.replay_memory import Transition
+from code import util
+from code.game_state import game_state_from_obs
+from code.node import Node
+from code.mcts import MCTS
+from code.net_input import featurize_simple
 
 import numpy as np
 # from tqdm import tqdm
